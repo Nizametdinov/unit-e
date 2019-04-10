@@ -375,6 +375,7 @@ libunite_server_a_SOURCES = \
   policy/fees.cpp \
   policy/policy.cpp \
   policy/rbf.cpp \
+  proposer/finalization_reward_logic.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
   rpc/finalization.cpp \
@@ -444,7 +445,6 @@ libunite_wallet_a_SOURCES = \
   key/mnemonic/mnemonic.cpp \
   miner.cpp \
   proposer/block_builder.cpp \
-  proposer/finalization_reward_logic.cpp \
   proposer/eligible_coin.cpp \
   proposer/multiwallet.cpp \
   proposer/proposer.cpp \
