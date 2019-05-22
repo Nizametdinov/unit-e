@@ -83,25 +83,32 @@ struct Fixture {
 
 }  // namespace
 
-BOOST_AUTO_TEST_SUITE(finalization_reward_logic_tests)
+BOOST_FIXTURE_TEST_SUITE(finalization_reward_logic_tests, ReducedTestingSetup)
 
 BOOST_AUTO_TEST_CASE(get_finalization_rewards) {
   Fixture f;
   auto logic = f.GetFinalizationRewardLogic();
   FinalizationStateSpy &fin_state = f.state_repository.state;
 
-  f.BuildChain(f.fin_params.GetEpochCheckpointHeight(2) + 1);
+  f.BuildChain(f.fin_params.GetEpochCheckpointHeight(6) + 1);
+
+  uint160 finalizer_1 = RandValidatorAddr();
+  uint160 finalizer_2 = RandValidatorAddr();
+  CAmount deposit_size_1 = fin_state.MinDepositSize();
+  CAmount deposit_size_2 = fin_state.MinDepositSize() * 2;
+  fin_state.ProcessDeposit(finalizer_1, deposit_size_1);
+  fin_state.ProcessDeposit(finalizer_2, deposit_size_2);
 
   std::vector<CTxOut> rewards = logic->GetFinalizationRewards(f.BlockIndexAtHeight(0));
   std::vector<CAmount> reward_amounts = logic->GetFinalizationRewardAmounts(f.BlockIndexAtHeight(0));
   BOOST_CHECK_EQUAL(rewards.size(), 0);
   BOOST_CHECK_EQUAL(reward_amounts.size(), 0);
 
-  for (uint32_t epoch = 1; epoch < 3; ++epoch) {
-    fin_state.InitializeEpoch(fin_state.GetEpochStartHeight(epoch));
+  for (uint32_t epoch = 1; epoch <= 3; ++epoch) {
+    fin_state.InitializeEpoch(f.fin_params.GetEpochStartHeight(epoch));
     BOOST_REQUIRE_EQUAL(fin_state.GetCurrentEpoch(), epoch);
 
-    for (auto height = fin_state.GetEpochStartHeight(epoch); height < f.fin_params.GetEpochCheckpointHeight(epoch);
+    for (auto height = f.fin_params.GetEpochStartHeight(epoch); height < f.fin_params.GetEpochCheckpointHeight(epoch);
          ++height) {
       rewards = logic->GetFinalizationRewards(f.BlockIndexAtHeight(height));
       reward_amounts = logic->GetFinalizationRewardAmounts(f.BlockIndexAtHeight(height));
@@ -117,7 +124,122 @@ BOOST_AUTO_TEST_CASE(get_finalization_rewards) {
     BOOST_CHECK_EQUAL(rewards.size(), f.fin_params.epoch_length);
     BOOST_CHECK_EQUAL(reward_amounts.size(), f.fin_params.epoch_length);
     for (std::size_t i = 0; i < rewards.size(); ++i) {
-      auto h = static_cast<blockchain::Height>(fin_state.GetEpochStartHeight(epoch) + i);
+      auto h = static_cast<blockchain::Height>(f.fin_params.GetEpochStartHeight(epoch) + i);
+      auto r = static_cast<CAmount>(f.parameters.reward_function(f.parameters, h) * 0.4);
+      BOOST_CHECK_EQUAL(rewards[i].nValue, r);
+      BOOST_CHECK_EQUAL(reward_amounts[i], r);
+      auto s = f.BlockAtHeight(h).vtx[0]->vout[0].scriptPubKey;
+      BOOST_CHECK_EQUAL(HexStr(rewards[i].scriptPubKey), HexStr(s));
+    }
+  }
+
+  {
+    BOOST_CHECK_EQUAL(fin_state.Checkpoints()[3].m_is_justified, false);
+    BOOST_CHECK_EQUAL(fin_state.Checkpoints()[3].m_is_finalized, false);
+
+//  BOOST_CHECK_EQUAL(fin_state.ValidateVote(vote), +Result::SUCCESS);
+
+    uint32_t epoch = 4;
+    fin_state.InitializeEpoch(f.fin_params.GetEpochStartHeight(epoch));
+    BOOST_REQUIRE_EQUAL(fin_state.GetCurrentEpoch(), epoch);
+
+    Vote vote{finalizer_2, GetRandHash(), 2, 3};
+    fin_state.ProcessVote(vote);
+
+    BOOST_CHECK_EQUAL(fin_state.Checkpoints()[3].m_is_justified, true);
+    BOOST_CHECK_EQUAL(fin_state.Checkpoints()[3].m_is_finalized, true);
+
+    for (auto height = f.fin_params.GetEpochStartHeight(epoch); height < f.fin_params.GetEpochCheckpointHeight(epoch);
+         ++height) {
+      rewards = logic->GetFinalizationRewards(f.BlockIndexAtHeight(height));
+      reward_amounts = logic->GetFinalizationRewardAmounts(f.BlockIndexAtHeight(height));
+      BOOST_CHECK_EQUAL(rewards.size(), 0);
+      BOOST_CHECK_EQUAL(reward_amounts.size(), 0);
+    }
+
+    auto checkpoint_height = fin_state.GetEpochCheckpointHeight(epoch);
+
+    // We must pay out the rewards in the first block of an epoch, i.e. when the current tip is a checkpoint block
+    rewards = logic->GetFinalizationRewards(f.BlockIndexAtHeight(checkpoint_height));
+    reward_amounts = logic->GetFinalizationRewardAmounts(f.BlockIndexAtHeight(checkpoint_height));
+    BOOST_CHECK_EQUAL(rewards.size(), f.fin_params.epoch_length);
+    BOOST_CHECK_EQUAL(reward_amounts.size(), f.fin_params.epoch_length);
+    for (std::size_t i = 0; i < rewards.size(); ++i) {
+      auto h = static_cast<blockchain::Height>(f.fin_params.GetEpochStartHeight(epoch) + i);
+      auto r = static_cast<CAmount>(f.parameters.reward_function(f.parameters, h) * 0.4 * 2 / 3);
+      BOOST_CHECK_EQUAL(rewards[i].nValue, r);
+      BOOST_CHECK_EQUAL(reward_amounts[i], r);
+      auto s = f.BlockAtHeight(h).vtx[0]->vout[0].scriptPubKey;
+      BOOST_CHECK_EQUAL(HexStr(rewards[i].scriptPubKey), HexStr(s));
+    }
+  }
+
+  {
+    uint32_t epoch = 5;
+    fin_state.InitializeEpoch(f.fin_params.GetEpochStartHeight(epoch));
+    BOOST_REQUIRE_EQUAL(fin_state.GetCurrentEpoch(), epoch);
+
+    Vote vote{finalizer_1, GetRandHash(), 3, 4};
+    fin_state.ProcessVote(vote);
+
+    BOOST_CHECK_EQUAL(fin_state.Checkpoints()[4].m_is_justified, false);
+    BOOST_CHECK_EQUAL(fin_state.Checkpoints()[4].m_is_finalized, false);
+
+    for (auto height = f.fin_params.GetEpochStartHeight(epoch); height < f.fin_params.GetEpochCheckpointHeight(epoch);
+         ++height) {
+      rewards = logic->GetFinalizationRewards(f.BlockIndexAtHeight(height));
+      reward_amounts = logic->GetFinalizationRewardAmounts(f.BlockIndexAtHeight(height));
+      BOOST_CHECK_EQUAL(rewards.size(), 0);
+      BOOST_CHECK_EQUAL(reward_amounts.size(), 0);
+    }
+
+    auto checkpoint_height = fin_state.GetEpochCheckpointHeight(epoch);
+
+    // We must pay out the rewards in the first block of an epoch, i.e. when the current tip is a checkpoint block
+    rewards = logic->GetFinalizationRewards(f.BlockIndexAtHeight(checkpoint_height));
+    reward_amounts = logic->GetFinalizationRewardAmounts(f.BlockIndexAtHeight(checkpoint_height));
+    BOOST_CHECK_EQUAL(rewards.size(), f.fin_params.epoch_length);
+    BOOST_CHECK_EQUAL(reward_amounts.size(), f.fin_params.epoch_length);
+    for (std::size_t i = 0; i < rewards.size(); ++i) {
+      auto h = static_cast<blockchain::Height>(f.fin_params.GetEpochStartHeight(epoch) + i);
+      auto r = static_cast<CAmount>(f.parameters.reward_function(f.parameters, h) * 0.4 * 1 / 3);
+      BOOST_CHECK_EQUAL(rewards[i].nValue, r);
+      BOOST_CHECK_EQUAL(reward_amounts[i], r);
+      auto s = f.BlockAtHeight(h).vtx[0]->vout[0].scriptPubKey;
+      BOOST_CHECK_EQUAL(HexStr(rewards[i].scriptPubKey), HexStr(s));
+    }
+  }
+
+  {
+    uint32_t epoch = 6;
+    fin_state.InitializeEpoch(f.fin_params.GetEpochStartHeight(epoch));
+    BOOST_REQUIRE_EQUAL(fin_state.GetCurrentEpoch(), epoch);
+
+    Vote vote1{finalizer_1, GetRandHash(), 3, 5};
+    Vote vote2{finalizer_2, GetRandHash(), 3, 5};
+    fin_state.ProcessVote(vote1);
+    fin_state.ProcessVote(vote2);
+
+    BOOST_CHECK_EQUAL(fin_state.Checkpoints()[5].m_is_justified, true);
+    BOOST_CHECK_EQUAL(fin_state.Checkpoints()[5].m_is_finalized, false);
+
+    for (auto height = f.fin_params.GetEpochStartHeight(epoch); height < f.fin_params.GetEpochCheckpointHeight(epoch);
+         ++height) {
+      rewards = logic->GetFinalizationRewards(f.BlockIndexAtHeight(height));
+      reward_amounts = logic->GetFinalizationRewardAmounts(f.BlockIndexAtHeight(height));
+      BOOST_CHECK_EQUAL(rewards.size(), 0);
+      BOOST_CHECK_EQUAL(reward_amounts.size(), 0);
+    }
+
+    auto checkpoint_height = fin_state.GetEpochCheckpointHeight(epoch);
+
+    // We must pay out the rewards in the first block of an epoch, i.e. when the current tip is a checkpoint block
+    rewards = logic->GetFinalizationRewards(f.BlockIndexAtHeight(checkpoint_height));
+    reward_amounts = logic->GetFinalizationRewardAmounts(f.BlockIndexAtHeight(checkpoint_height));
+    BOOST_CHECK_EQUAL(rewards.size(), f.fin_params.epoch_length);
+    BOOST_CHECK_EQUAL(reward_amounts.size(), f.fin_params.epoch_length);
+    for (std::size_t i = 0; i < rewards.size(); ++i) {
+      auto h = static_cast<blockchain::Height>(f.fin_params.GetEpochStartHeight(epoch) + i);
       auto r = static_cast<CAmount>(f.parameters.reward_function(f.parameters, h) * 0.4);
       BOOST_CHECK_EQUAL(rewards[i].nValue, r);
       BOOST_CHECK_EQUAL(reward_amounts[i], r);
