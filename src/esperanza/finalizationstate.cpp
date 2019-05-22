@@ -491,6 +491,14 @@ Result FinalizationState::ValidateVote(const Vote &vote, const bool log_errors) 
   return success();
 }
 
+uint64_t FinalizationState::GetCurrentDynastyVotes() {
+  return GetCheckpoint(m_current_epoch - 1).GetCurDynastyVotes(m_expected_source_epoch);
+}
+
+CAmount FinalizationState::GetCurrentDynastyDeposits() {
+  return m_cur_dyn_deposits;
+}
+
 void FinalizationState::ProcessVote(const Vote &vote) {
   LOCK(cs_esperanza);
 

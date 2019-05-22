@@ -166,7 +166,7 @@ BOOST_AUTO_TEST_CASE(get_finalization_rewards) {
     BOOST_CHECK_EQUAL(reward_amounts.size(), f.fin_params.epoch_length);
     for (std::size_t i = 0; i < rewards.size(); ++i) {
       auto h = static_cast<blockchain::Height>(f.fin_params.GetEpochStartHeight(epoch) + i);
-      auto r = static_cast<CAmount>(f.parameters.reward_function(f.parameters, h) * 0.4 * 2 / 3);
+      auto r = ufp64::to_uint(ufp64::div_2uint(f.behavior->CalculateFinalizationReward(h) * 2, 3));
       BOOST_CHECK_EQUAL(rewards[i].nValue, r);
       BOOST_CHECK_EQUAL(reward_amounts[i], r);
       auto s = f.BlockAtHeight(h).vtx[0]->vout[0].scriptPubKey;
@@ -202,7 +202,7 @@ BOOST_AUTO_TEST_CASE(get_finalization_rewards) {
     BOOST_CHECK_EQUAL(reward_amounts.size(), f.fin_params.epoch_length);
     for (std::size_t i = 0; i < rewards.size(); ++i) {
       auto h = static_cast<blockchain::Height>(f.fin_params.GetEpochStartHeight(epoch) + i);
-      auto r = static_cast<CAmount>(f.parameters.reward_function(f.parameters, h) * 0.4 * 1 / 3);
+      auto r = ufp64::to_uint(f.behavior->CalculateFinalizationReward(h) * ufp64::div_2uint(1, 3));
       BOOST_CHECK_EQUAL(rewards[i].nValue, r);
       BOOST_CHECK_EQUAL(reward_amounts[i], r);
       auto s = f.BlockAtHeight(h).vtx[0]->vout[0].scriptPubKey;
@@ -240,7 +240,7 @@ BOOST_AUTO_TEST_CASE(get_finalization_rewards) {
     BOOST_CHECK_EQUAL(reward_amounts.size(), f.fin_params.epoch_length);
     for (std::size_t i = 0; i < rewards.size(); ++i) {
       auto h = static_cast<blockchain::Height>(f.fin_params.GetEpochStartHeight(epoch) + i);
-      auto r = static_cast<CAmount>(f.parameters.reward_function(f.parameters, h) * 0.4);
+      auto r = f.parameters.reward_function(f.parameters, h) * 4 / 10;
       BOOST_CHECK_EQUAL(rewards[i].nValue, r);
       BOOST_CHECK_EQUAL(reward_amounts[i], r);
       auto s = f.BlockAtHeight(h).vtx[0]->vout[0].scriptPubKey;

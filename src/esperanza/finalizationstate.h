@@ -186,6 +186,9 @@ class FinalizationState : public FinalizationStateData {
   //! Return the epoch when the current dynasty started
   uint32_t GetCurrentDynastyEpochStart() const;
 
+  uint64_t GetCurrentDynastyVotes();
+  CAmount GetCurrentDynastyDeposits();
+
  private:
   //!In case there is nobody available to justify we justify automatically.
   void InstaJustify();

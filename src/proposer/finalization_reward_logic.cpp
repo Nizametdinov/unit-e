@@ -53,10 +53,20 @@ class FinalizationRewardLogicImpl : public FinalizationRewardLogic {
     result.reserve(m_finalization_params->epoch_length);
     const auto epoch = m_finalization_params->GetEpoch(prev_height);
     const blockchain::Height epoch_start = m_finalization_params->GetEpochStartHeight(epoch);
+    const auto fin_state = m_fin_state_repo->Find(last_block);
+    assert(fin_state->GetCurrentEpoch() == epoch);
+
+    const auto votes = fin_state->GetCurrentDynastyVotes();
+    const auto deposits = fin_state->GetCurrentDynastyDeposits();
+    assert(deposits >= 0);
+    // TODO UNIT-E: move fraction calculation to FinalizationState
+    ufp64::ufp64_t fraction = deposits == 0 ? ufp64::to_ufp64(1) : ufp64::div_2uint(votes, deposits);
 
     for (const CBlockIndex *walk = &last_block; walk != nullptr && walk->nHeight >= epoch_start; walk = walk->pprev) {
+      CAmount full_reward = m_blockchain_behavior->CalculateFinalizationReward(static_cast<blockchain::Height>(walk->nHeight));
+      uint64_t reward = ufp64::to_uint(ufp64::mul_by_uint(fraction, full_reward));
       result.emplace_back(
-          m_blockchain_behavior->CalculateFinalizationReward(static_cast<blockchain::Height>(walk->nHeight)),
+          reward,
           GetRewardScript(*walk));
     }
     assert(result.size() == m_finalization_params->epoch_length);
